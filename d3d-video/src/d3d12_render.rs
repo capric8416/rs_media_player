@@ -294,6 +294,22 @@ impl D3d12Renderer {
         frame: &D3d12ScaleFrame,
         parameters: &RenderParameters,
     ) -> VideoResult<PresentResult> {
+        if crate::d3d_render::can_direct_present(
+            frame.info(),
+            frame.sample_aspect_ratio(),
+            self.target_size,
+            parameters,
+        ) {
+            let render_frame = D3d12RenderFrame::from_scale_frame(frame)?;
+            let copy_parameters = RenderParameters {
+                destination: None,
+                aspect_mode: crate::AspectMode::Stretch,
+                rotation: Rotation::Degrees0,
+                background: parameters.background,
+                present_mode: parameters.present_mode,
+            };
+            return self.render_frame(&render_frame, &copy_parameters);
+        }
         if self.scaler.is_none() {
             self.scaler = Some(D3d12Scaler::create(&self.device)?);
         }

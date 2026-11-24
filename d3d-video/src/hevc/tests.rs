@@ -214,6 +214,14 @@ fn serializes_dxva2_hevc_idr_buffers() -> VideoResult<()> {
     assert_eq!(picture.len(), 232);
     assert_eq!(picture[0..2], [240, 0]); // 1920 pixels / 8-pixel minimum CB.
     assert_eq!(picture[6], 7);
+    assert_eq!(
+        u32::from_le_bytes(
+            picture[24..28].try_into().map_err(|_| {
+                super::hevc_error("test", "DXVA HEVC coding flags are truncated")
+            })?
+        ),
+        0x060e_0006
+    ); // FFmpeg DXVA bit layout: AMP, SAO, LT refs, temporal MVP, smoothing, sign hiding, CABAC.
     assert_eq!(picture[160..162], [0; 2]); // POC list starts with zero for IDR.
     assert_eq!(&picture[200..224], &[0xff; 24]); // FFmpeg initializes unused RPS entries to 0xff.
     assert_eq!(super::dxva::idr_quant_matrix(&vps, &sps, &pps)?.len(), 1000);

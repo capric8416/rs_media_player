@@ -1,7 +1,7 @@
 use super::frame::{
-    Av1CdefParams, Av1DeltaParams, Av1IntraFrameTail, Av1LoopFilterParams, Av1QuantizationParams,
-    Av1RestorationParams, Av1SegmentationParams, FrameReferenceHeader, FrameType,
-    IntraFrameTileHeader,
+    Av1CdefParams, Av1DeltaParams, Av1FilmGrainParams, Av1IntraFrameTail, Av1LoopFilterParams,
+    Av1QuantizationParams, Av1RestorationParams, Av1SegmentationParams, FrameReferenceHeader,
+    FrameType, IntraFrameTileHeader,
 };
 use super::refs::{ReferenceSlot, ReferenceSlots, derive_short_refs, relative_distance};
 use super::sequence::SequenceHeader;
@@ -82,7 +82,7 @@ fn atomically_refreshes_and_invalidates_slots() -> VideoResult<()> {
         height: 64,
         render_width: 64,
         render_height: 64,
-        film_grain: Default::default(),
+        film_grain: Av1FilmGrainParams::default(),
     };
     slots.commit(0b1000_0001, frame);
     assert_eq!(slots.get(0)?, frame);
@@ -110,7 +110,7 @@ fn derives_short_signalled_reference_order() -> VideoResult<()> {
                 height: 64,
                 render_width: 64,
                 render_height: 64,
-                film_grain: Default::default(),
+                film_grain: Av1FilmGrainParams::default(),
             },
         );
     }
@@ -387,6 +387,7 @@ fn parses_reduced_key_frame_dimensions_and_tile_layout() -> VideoResult<()> {
         &obu,
         &sequence,
         &reference,
+        &frame,
         &quant,
         &segmentation,
         &restoration,
@@ -499,7 +500,7 @@ fn parses_explicit_inter_references_and_frame_ids() -> VideoResult<()> {
                 height: 64,
                 render_width: 64,
                 render_height: 64,
-                film_grain: Default::default(),
+                film_grain: Av1FilmGrainParams::default(),
             },
         );
     }
@@ -544,7 +545,7 @@ fn validates_show_existing_frame_id() -> VideoResult<()> {
             height: 64,
             render_width: 64,
             render_height: 64,
-            film_grain: Default::default(),
+            film_grain: Av1FilmGrainParams::default(),
         },
     );
     let mut bits = BitWriter::default();

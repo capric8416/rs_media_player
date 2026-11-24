@@ -120,6 +120,53 @@ impl D3d11Renderer {
         })
     }
 
+    fn copy_bgra_frame(
+        &self,
+        frame: &D3d11DecodedFrame,
+        parameters: &RenderParameters,
+    ) -> VideoResult<PresentResult> {
+        let mut source_desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: The frame retains a live texture and the descriptor is writable output storage.
+        unsafe { frame.texture.GetDesc(&raw mut source_desc) };
+        if source_desc.Width != self.target_size.width()
+            || source_desc.Height != self.target_size.height()
+            || source_desc.MipLevels != 1
+            || source_desc.ArraySize != 1
+            || source_desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM
+            || source_desc.SampleDesc.Count != 1
+        {
+            return Err(render_error(
+                VideoErrorKind::InvalidInput,
+                "D3d11Renderer::copy_bgra_frame",
+                "direct presentation requires a target-sized single-sample BGRA texture",
+            ));
+        }
+        // SAFETY: The swap chain is live and buffer zero is its current BGRA texture.
+        let backbuffer: ID3D11Texture2D = unsafe { self.swap_chain.GetBuffer(0) }
+            .map_err(|error| backend_error("IDXGISwapChain1::GetBuffer", error.code().0))?;
+        // SAFETY: Source and destination are same-sized, single-sample BGRA textures owned by the
+        // same D3D11 device. CopyResource records a GPU copy and retains no borrowed pointers.
+        unsafe {
+            self.device
+                .immediate_context()
+                .CopyResource(&backbuffer, &frame.texture);
+        }
+        let sync_interval = match parameters.present_mode {
+            PresentMode::VSync => 1,
+            PresentMode::Immediate => 0,
+        };
+        // SAFETY: The swap chain is live and the sync interval is a valid DXGI present setting.
+        let result = unsafe { self.swap_chain.Present(sync_interval, DXGI_PRESENT(0)) };
+        self.wait_for_render(frame)?;
+        if result.0 == 0x087a_0001 {
+            Ok(PresentResult::Occluded)
+        } else if result.is_ok() {
+            Ok(PresentResult::Presented)
+        } else {
+            Err(backend_error("IDXGISwapChain1::Present", result.0))
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "the D3D11 processor setup and synchronous blit form one ordered transaction"
@@ -129,6 +176,14 @@ impl D3d11Renderer {
         frame: &D3d11DecodedFrame,
         parameters: &RenderParameters,
     ) -> VideoResult<PresentResult> {
+        if crate::d3d_render::can_direct_present(
+            &frame.info,
+            frame.sample_aspect_ratio(),
+            self.target_size,
+            parameters,
+        ) {
+            return self.copy_bgra_frame(frame, parameters);
+        }
         if !matches!(
             frame.info.format,
             PixelFormat::Nv12 | PixelFormat::P010 | PixelFormat::Bgra8

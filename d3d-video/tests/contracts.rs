@@ -244,6 +244,7 @@ fn associated_frame_type_composes_decode_scale_and_render() -> VideoResult<()> {
         source_rect: None,
         destination_rect: None,
         aspect_mode: AspectMode::Contain,
+        rotation: d3d_video::Rotation::Degrees0,
         filter: ScaleFilter::Linear,
         output_color: None,
     };

@@ -1,4 +1,6 @@
-use crate::{AspectMode, FrameSize, GpuFrame, Rect, VideoResult};
+use crate::{
+    AspectMode, FrameInfo, FrameSize, GpuFrame, PixelFormat, Rect, SampleAspectRatio, VideoResult,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PresentMode {
@@ -52,6 +54,24 @@ impl Default for RenderParameters {
     }
 }
 
+/// Returns whether a processed BGRA frame already exactly covers the presentation target.
+///
+/// A square-pixel frame with matching dimensions needs no further aspect fitting. Background and
+/// aspect mode therefore cannot affect the result, while an explicit destination or rotation still
+/// requires the backend's video processor.
+pub(crate) fn can_direct_present(
+    info: &FrameInfo,
+    sample_aspect: SampleAspectRatio,
+    target_size: FrameSize,
+    parameters: &RenderParameters,
+) -> bool {
+    info.format == PixelFormat::Bgra8
+        && info.size == target_size
+        && sample_aspect == SampleAspectRatio::SQUARE
+        && parameters.destination.is_none()
+        && parameters.rotation == Rotation::Degrees0
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PresentResult {
     Presented,
@@ -78,4 +98,77 @@ pub trait D3dRender {
         frame: &Self::Frame,
         parameters: &RenderParameters,
     ) -> VideoResult<PresentResult>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RenderParameters, Rotation, can_direct_present};
+    use crate::{ColorInfo, FrameInfo, FrameSize, PixelFormat, Rect, SampleAspectRatio, TimeBase};
+
+    fn frame_info(size: FrameSize, format: PixelFormat) -> crate::VideoResult<FrameInfo> {
+        Ok(FrameInfo {
+            size,
+            format,
+            color: ColorInfo::default(),
+            pts: None,
+            duration: None,
+            time_base: TimeBase::new(1, 1)?,
+        })
+    }
+
+    #[test]
+    fn direct_present_accepts_target_sized_square_bgra() -> crate::VideoResult<()> {
+        let size = FrameSize::new(1280, 720)?;
+        assert!(can_direct_present(
+            &frame_info(size, PixelFormat::Bgra8)?,
+            SampleAspectRatio::SQUARE,
+            size,
+            &RenderParameters::default(),
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn direct_present_rejects_operations_requiring_processing() -> crate::VideoResult<()> {
+        let size = FrameSize::new(1280, 720)?;
+        let info = frame_info(size, PixelFormat::Bgra8)?;
+        let parameters = RenderParameters {
+            rotation: Rotation::Degrees90,
+            ..RenderParameters::default()
+        };
+        assert!(!can_direct_present(
+            &info,
+            SampleAspectRatio::SQUARE,
+            size,
+            &parameters,
+        ));
+
+        let parameters = RenderParameters {
+            destination: Some(Rect {
+                x: 0,
+                y: 0,
+                size: FrameSize::new(640, 360)?,
+            }),
+            ..RenderParameters::default()
+        };
+        assert!(!can_direct_present(
+            &info,
+            SampleAspectRatio::SQUARE,
+            size,
+            &parameters,
+        ));
+        assert!(!can_direct_present(
+            &frame_info(size, PixelFormat::Nv12)?,
+            SampleAspectRatio::SQUARE,
+            size,
+            &RenderParameters::default(),
+        ));
+        assert!(!can_direct_present(
+            &info,
+            SampleAspectRatio::new(4, 3)?,
+            size,
+            &RenderParameters::default(),
+        ));
+        Ok(())
+    }
 }

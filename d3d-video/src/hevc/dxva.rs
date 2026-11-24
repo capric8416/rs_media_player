@@ -333,9 +333,14 @@ fn serialize_picture_parameters(
         | (u32::from(pcm.map_or(0, |params| params.log2_min_cb_size_minus3)) << 12)
         | (u32::from(pcm.map_or(0, |params| params.log2_diff_max_min_cb_size)) << 14)
         | (u32::from(pcm.is_some_and(|params| params.loop_filter_disabled)) << 16)
-        | (u32::from(!sps.long_term_lsb.is_empty()) << 7)
-        | (u32::from(sps.temporal_mvp_enabled) << 8)
-        | (u32::from(sps.strong_intra_smoothing_enabled) << 9);
+        | (u32::from(!sps.long_term_lsb.is_empty()) << 17)
+        | (u32::from(sps.temporal_mvp_enabled) << 18)
+        | (u32::from(sps.strong_intra_smoothing_enabled) << 19)
+        | (u32::from(pps.dependent_slice_segments_enabled) << 20)
+        | (u32::from(pps.output_flag_present) << 21)
+        | (u32::from(pps.extra_slice_header_bits) << 22)
+        | (u32::from(pps.sign_data_hiding) << 25)
+        | (u32::from(pps.cabac_init_present) << 26);
     out.extend_from_slice(&coding_flags.to_le_bytes());
     let picture_flags = u32::from(pps.constrained_intra_pred)
         | (u32::from(pps.transform_skip_enabled) << 1)
@@ -551,9 +556,7 @@ fn write_tile_dimensions(
         ));
     }
     let mut widths = Vec::with_capacity(count);
-    if !enabled || uniform {
-        widths.push(total);
-    } else {
+    if enabled && !uniform {
         let mut sum = 0_u32;
         for width in explicit {
             let value = u32::from(*width) + 1;

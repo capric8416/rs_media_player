@@ -21,9 +21,12 @@ pub(crate) struct TileLayout {
 }
 
 impl TileLayout {
-    #[expect(
-        dead_code,
-        reason = "generic AV1 tile-layout parsing is needed for inter-frame headers"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "generic AV1 tile-layout parsing is exercised by the test parser entry point"
+        )
     )]
     pub(crate) fn parse(
         payload: &[u8],

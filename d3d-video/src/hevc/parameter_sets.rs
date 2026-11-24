@@ -636,11 +636,17 @@ fn parse_pps(
             if disabled {
                 (override_enabled, true, 0, 0)
             } else {
+                let beta_offset_div2 = bounded_i8(bits.read_se()?, -6, 6, "beta offset")?;
+                let tc_offset_div2 = bounded_i8(bits.read_se()?, -6, 6, "tc offset")?;
                 (
                     override_enabled,
                     false,
-                    bounded_i8(bits.read_se()?, -6, 6, "beta offset")?,
-                    bounded_i8(bits.read_se()?, -6, 6, "tc offset")?,
+                    beta_offset_div2
+                        .checked_mul(2)
+                        .ok_or_else(|| hevc_error("parse_pps", "beta offset overflowed"))?,
+                    tc_offset_div2
+                        .checked_mul(2)
+                        .ok_or_else(|| hevc_error("parse_pps", "tc offset overflowed"))?,
                 )
             }
         } else {
