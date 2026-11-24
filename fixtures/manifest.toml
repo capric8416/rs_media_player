@@ -1,0 +1,5 @@
+schema = 1
+
+# Fixture entries are added by the units that introduce their parser or GPU behavior. Keeping the
+# initial manifest empty prevents unrecorded binary test data from becoming an accidental oracle.
+

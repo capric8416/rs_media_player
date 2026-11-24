@@ -1,0 +1,18 @@
+[package]
+name = "d3d-video"
+description = "Safe Rust interfaces for Windows D3D video decode, processing, and presentation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+
+[dependencies]
+mp4-demux = { path = "../mp4-demux" }
+
+[lints]
+workspace = true
+
