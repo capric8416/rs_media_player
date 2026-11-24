@@ -249,14 +249,14 @@ fn parse_fragment_defaults(payload: &[u8]) -> Mp4Result<HashMap<u32, FragmentDef
 }
 
 fn parse_trak(payload: &[u8], movie_timescale: Option<u32>) -> Mp4Result<Option<VideoTrack>> {
-    let mut track_id = None;
+    let mut track_header = None;
     let mut mdia = None;
     let mut edts = None;
     let mut position = 0;
     while position < payload.len() {
         let (kind, data, end) = child(payload, position)?;
         if kind == FourCc::new(*b"tkhd") {
-            set_unique(&mut track_id, parse_tkhd(data)?, position)?;
+            set_unique(&mut track_header, parse_tkhd(data)?, position)?;
         } else if kind == FourCc::new(*b"mdia") {
             set_unique(&mut mdia, data, position)?;
         } else if kind == FourCc::new(*b"edts") {
@@ -264,7 +264,8 @@ fn parse_trak(payload: &[u8], movie_timescale: Option<u32>) -> Mp4Result<Option<
         }
         position = end;
     }
-    let track_id = track_id.ok_or_else(|| movie_error(0, "trak is missing tkhd"))?;
+    let (track_id, display_rotation) =
+        track_header.ok_or_else(|| movie_error(0, "trak is missing tkhd"))?;
     let mdia = mdia.ok_or_else(|| movie_error(0, "trak is missing mdia"))?;
     let mut timescale = None;
     let mut is_video = None;
@@ -297,6 +298,7 @@ fn parse_trak(payload: &[u8], movie_timescale: Option<u32>) -> Mp4Result<Option<
     }
     let stbl = stbl.ok_or_else(|| movie_error(0, "video minf is missing stbl"))?;
     let mut track = VideoTrack::from_stbl(track_id, timescale, stbl)?;
+    track.display_rotation = display_rotation;
     if let Some(edts_payload) = edts {
         let mut elst = None;
         let mut edit_position = 0;
@@ -317,14 +319,59 @@ fn parse_trak(payload: &[u8], movie_timescale: Option<u32>) -> Mp4Result<Option<
     Ok(Some(track))
 }
 
-fn parse_tkhd(data: &[u8]) -> Mp4Result<u32> {
+fn parse_tkhd(data: &[u8]) -> Mp4Result<(u32, crate::DisplayRotation)> {
     let version = full_box_version(data, "tkhd")?;
     let offset = match version {
         0 => 12,
         1 => 20,
         _ => return Err(movie_error(0, "unsupported tkhd version")),
     };
-    read_nonzero_u32(data, offset, "tkhd track_ID")
+    let track_id = read_nonzero_u32(data, offset, "tkhd track_ID")?;
+    let matrix_offset = match version {
+        0 => 40,
+        1 => 52,
+        _ => unreachable!("version was checked above"),
+    };
+    let matrix = data
+        .get(matrix_offset..matrix_offset + 36)
+        .ok_or_else(|| movie_error(matrix_offset as u64, "truncated tkhd display matrix"))?;
+    let fixed = |index: usize| {
+        i32::from_be_bytes([
+            matrix[index],
+            matrix[index + 1],
+            matrix[index + 2],
+            matrix[index + 3],
+        ])
+    };
+    // tkhd stores a 16.16 affine matrix as [a, b, u, c, d, v, x, y, w].
+    // Matrix signatures follow the QuickTime/FFmpeg convention; the clockwise output
+    // rotation is the inverse of atan2(b, a) in its screen-coordinate transform.
+    let one = 1 << 16;
+    let a = fixed(0);
+    let b = fixed(4);
+    let c = fixed(12);
+    let d = fixed(16);
+    if fixed(8) != 0 || fixed(20) != 0 || fixed(32) != 0x4000_0000 {
+        return Err(movie_error(
+            matrix_offset as u64,
+            "unsupported perspective tkhd display matrix",
+        ));
+    }
+    let rotation = if (a, b, c, d) == (one, 0, 0, one) {
+        crate::DisplayRotation::Degrees0
+    } else if (a, b, c, d) == (0, -one, one, 0) {
+        crate::DisplayRotation::Degrees90
+    } else if (a, b, c, d) == (-one, 0, 0, -one) {
+        crate::DisplayRotation::Degrees180
+    } else if (a, b, c, d) == (0, one, -one, 0) {
+        crate::DisplayRotation::Degrees270
+    } else {
+        return Err(movie_error(
+            matrix_offset as u64,
+            "unsupported non-orthogonal tkhd display matrix",
+        ));
+    };
+    Ok((track_id, rotation))
 }
 
 fn parse_mdhd(data: &[u8]) -> Mp4Result<u32> {

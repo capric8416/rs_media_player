@@ -1508,6 +1508,10 @@ impl crate::D3dScale for D3d12Scaler {
         &self.capabilities
     }
 
+    fn supports_rotation(&self) -> bool {
+        true
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "submission and failure handling must preserve GPU resource lifetimes"

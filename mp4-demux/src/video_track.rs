@@ -36,6 +36,18 @@ pub struct VideoTrack {
     pub descriptions: Vec<VideoSampleDescription>,
     pub index: SampleIndex,
     pub edit_list: Option<EditList>,
+    /// Orthogonal display transform from the `tkhd` matrix, expressed clockwise.
+    pub display_rotation: DisplayRotation,
+}
+
+/// Orthogonal rotation stored in a track header display matrix.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DisplayRotation {
+    #[default]
+    Degrees0,
+    Degrees90,
+    Degrees180,
+    Degrees270,
 }
 
 impl VideoTrack {
@@ -95,6 +107,7 @@ impl VideoTrack {
             descriptions,
             index,
             edit_list: None,
+            display_rotation: DisplayRotation::Degrees0,
         })
     }
 

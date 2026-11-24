@@ -37,6 +37,12 @@ pub trait D3dScale {
 
     fn capabilities(&self) -> &[ScaleCapability];
 
+    /// Returns whether this scaler has a GPU path for orthogonal frame rotation.
+    /// Device and format capability checks may still be required when scaling.
+    fn supports_rotation(&self) -> bool {
+        false
+    }
+
     /// # Errors
     ///
     /// Returns an unsupported, invalid-input, backend, timeout, or device-lost error when the

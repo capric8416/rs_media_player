@@ -7,7 +7,7 @@ use mp4_demux::{DecodeSample, Sample, VideoMovie, VideoSampleDescription};
 
 use crate::{
     D3dDecode, D3dRender, D3dScale, EncodedSample, FrameSize, GpuFrame, PresentResult,
-    RenderParameters, SampleTiming, ScaleRequest, TimeBase, VideoError, VideoErrorKind,
+    RenderParameters, Rotation, SampleTiming, ScaleRequest, TimeBase, VideoError, VideoErrorKind,
     VideoResult,
 };
 
@@ -57,6 +57,7 @@ where
     renderer: P,
     scale_request: ScaleRequest,
     render_parameters: RenderParameters,
+    display_rotation: Rotation,
 }
 
 impl<R, D, S, P> Mp4VideoPlayback<R, D, S, P>
@@ -99,6 +100,22 @@ where
         let description = track.description_for(first)?;
         let decoder = decoder_configure(decoder, description)?;
         let decode_order = track.decode_samples(movie_timescale)?;
+        let parsed_display_rotation = match track.display_rotation {
+            mp4_demux::DisplayRotation::Degrees0 => Rotation::Degrees0,
+            mp4_demux::DisplayRotation::Degrees90 => Rotation::Degrees90,
+            mp4_demux::DisplayRotation::Degrees180 => Rotation::Degrees180,
+            mp4_demux::DisplayRotation::Degrees270 => Rotation::Degrees270,
+        };
+        let display_rotation = if parsed_display_rotation != Rotation::Degrees0
+            && !scaler.supports_rotation()
+        {
+            eprintln!(
+                "d3d-video: selected scaler does not support MP4 display rotation; presenting the source orientation"
+            );
+            Rotation::Degrees0
+        } else {
+            parsed_display_rotation
+        };
         let visible_presentation_times = decode_order
             .iter()
             .filter(|entry| !entry.discard_output)
@@ -121,6 +138,7 @@ where
             renderer,
             scale_request: options.scale_request,
             render_parameters: options.render_parameters,
+            display_rotation,
         })
     }
 
@@ -181,7 +199,7 @@ where
                 .pts
                 .is_some_and(|pts| self.visible_presentation_times.contains(&pts))
             {
-                let scaled = self.scaler.scale(&frame, &self.scale_request)?;
+                let scaled = self.scaler.scale(&frame, &self.effective_scale_request())?;
                 last_present = Some(self.renderer.render(&scaled, &self.render_parameters)?);
                 frames_presented += 1;
             }
@@ -212,7 +230,7 @@ where
                 .pts
                 .is_some_and(|pts| self.visible_presentation_times.contains(&pts))
             {
-                let scaled = self.scaler.scale(&frame, &self.scale_request)?;
+                let scaled = self.scaler.scale(&frame, &self.effective_scale_request())?;
                 last_present = Some(self.renderer.render(&scaled, &self.render_parameters)?);
                 presented += 1;
             }
@@ -311,6 +329,12 @@ where
             .ok_or_else(|| playback_input("sample description index is out of range"))
     }
 
+    fn effective_scale_request(&self) -> ScaleRequest {
+        let mut request = self.scale_request;
+        request.rotation = compose_rotation(request.rotation, self.display_rotation);
+        request
+    }
+
     fn read_sample(&mut self, sample: Sample) -> Result<Vec<u8>, PlaybackError> {
         let length = usize::try_from(sample.size)
             .map_err(|_| playback_input("sample size exceeds address space"))?;
@@ -325,6 +349,22 @@ where
             .read_exact(&mut bytes)
             .map_err(|error| PlaybackError::Io(error.to_string()))?;
         Ok(bytes)
+    }
+}
+
+fn compose_rotation(left: Rotation, right: Rotation) -> Rotation {
+    let degrees = |rotation| match rotation {
+        Rotation::Degrees0 => 0,
+        Rotation::Degrees90 => 90,
+        Rotation::Degrees180 => 180,
+        Rotation::Degrees270 => 270,
+    };
+    match (degrees(left) + degrees(right)) % 360 {
+        0 => Rotation::Degrees0,
+        90 => Rotation::Degrees90,
+        180 => Rotation::Degrees180,
+        270 => Rotation::Degrees270,
+        _ => unreachable!("quarter-turn rotations sum to a quarter-turn"),
     }
 }
 

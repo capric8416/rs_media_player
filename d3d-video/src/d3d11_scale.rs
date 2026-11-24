@@ -516,6 +516,10 @@ impl D3dScale for D3d11Scaler {
         &self.capabilities
     }
 
+    fn supports_rotation(&self) -> bool {
+        true
+    }
+
     fn scale(&mut self, input: &Self::Frame, request: &ScaleRequest) -> VideoResult<Self::Frame> {
         self.scale_frame(input, request)
     }

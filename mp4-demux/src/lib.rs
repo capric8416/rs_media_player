@@ -28,4 +28,4 @@ pub use video_description::{
     VideoSampleDescription,
 };
 pub use video_movie::{VideoMovie, parse_moov_video_tracks};
-pub use video_track::{DecodeSample, PresentedSample, VideoTrack};
+pub use video_track::{DecodeSample, DisplayRotation, PresentedSample, VideoTrack};
